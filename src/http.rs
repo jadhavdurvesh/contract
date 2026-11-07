@@ -152,7 +152,7 @@ mod tests {
  #[test] fn finds_header_terminator(){assert_eq!(find_header_end(b"GET / HTTP/1.1\r\n\r\n"),Some(14));}
  #[test] fn server_dispatches_http_request(){
   let mut app=Application::default();
-  app.route(Method::Get,"/health",|_|Response::text(200,"ok"));
+  app.route(Method::Get,"/health",|_|Response::text(200,"ok")).unwrap();
   let app=Arc::new(app);let server=HttpServer::bind("127.0.0.1:0",app,HttpConfig::default()).unwrap();
   let addr=server.local_addr().unwrap();
   server.listener.set_nonblocking(false).unwrap();
