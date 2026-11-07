@@ -72,6 +72,22 @@ mod tests {
         let response = p.execute(&req, |_| Response::text(200, "ok"));
         assert_eq!(response.headers.get("x-contract").unwrap(), "processed");
     }
+    struct Stop;
+    impl Middleware for Stop {
+        fn before(&self, _: &Request) -> Option<Response> { Some(Response::text(403, "blocked")) }
+        fn after(&self, _: &Request, mut response: Response) -> Response {
+            response.headers.insert("x-after-short-circuit".into(), "ran".into());
+            response
+        }
+    }
+    #[test]
+    fn after_hooks_run_for_short_circuiting_layers() {
+        let mut p = Pipeline::new(); p.push(Stop);
+        let req = Request::new(Method::Get, "/", Vec::new());
+        let response = p.execute(&req, |_| panic!("handler must not run"));
+        assert_eq!(response.status, 403);
+        assert_eq!(response.headers.get("x-after-short-circuit").map(String::as_str), Some("ran"));
+    }
     #[test]
     fn request_limits_are_enforced() {
         let req = Request::new(Method::Post, "/x", vec![0; 5]);
