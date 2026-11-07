@@ -94,7 +94,7 @@ fn handle_connection(mut stream:TcpStream, app:&Application, cfg:HttpConfig)->Re
     let version=parts.next().ok_or(HttpError::MalformedRequest)?;
     if parts.next().is_some() || !(version=="HTTP/1.1"||version=="HTTP/1.0")
         || !target.starts_with('/') || target.contains('#') { return Err(HttpError::MalformedRequest); }
-    let path=target.split('?').next().unwrap_or("/");
+    let path=target.split('?').next().unwrap_or("/").to_owned();
     let mut content_length=None; let mut count=0usize; let mut host_seen=false;
     for line in lines {
         if line.is_empty(){continue}
@@ -123,7 +123,7 @@ fn handle_connection(mut stream:TcpStream, app:&Application, cfg:HttpConfig)->Re
         if bytes.len()-body_start>body_len { return Err(HttpError::MalformedRequest); }
     }
     let body=bytes[body_start..body_start+body_len].to_vec();
-    let request=Request::new(method,path.to_owned(),body);
+    let request=Request::new(method,path,body);
     if validate_request(&request,count,Limits{max_path_bytes:cfg.max_request_line_bytes,max_body_bytes:cfg.max_body_bytes,max_headers:cfg.max_headers}).is_err(){
         return write_response(stream,Response::text(400,"invalid request"),cfg.write_timeout).map_err(HttpError::Io);
     }
