@@ -1,5 +1,6 @@
 //! CONTRACT: transport-independent API application core.
 pub mod middleware;
+pub mod http;
 pub mod router;
 pub mod rpc;
 use std::collections::BTreeMap;
