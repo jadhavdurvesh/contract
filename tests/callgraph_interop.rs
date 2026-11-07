@@ -54,7 +54,7 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
             }
             Err(_) => {}
         }
-        if let Ok(status) = _server.0.try_wait() {
+        if let Ok(Some(status)) = _server.0.try_wait() {
             panic!("Go CALLGRAPH server exited early: {status:?}");
         }
         thread::sleep(Duration::from_millis(100));
