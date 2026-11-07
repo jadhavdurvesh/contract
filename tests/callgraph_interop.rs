@@ -25,7 +25,7 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
     };
 
     let address: SocketAddr = "127.0.0.1:19000".parse().unwrap();
-    let mut child = Command::new(binary)
+    let child = Command::new(binary)
         .env("CALLGRAPH_LISTEN", address.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -55,7 +55,7 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
         if started.elapsed() > Duration::from_secs(8) {
             panic!("Go CALLGRAPH server did not interoperate: {:?}", last_error);
         }
-        if let Ok(status) = child.try_wait() {
+        if let Ok(status) = _server.0.try_wait() {
             panic!("Go CALLGRAPH server exited early: {status:?}");
         }
         thread::sleep(Duration::from_millis(100));
