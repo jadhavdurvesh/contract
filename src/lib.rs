@@ -1,5 +1,7 @@
 //! CONTRACT: a small, transport-independent API application core.
 
+pub mod middleware;
+
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
