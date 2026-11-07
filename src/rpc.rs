@@ -142,21 +142,20 @@ impl RpcClient {
         let mut response = vec![0u8; self.config.max_datagram_bytes + 1];
         let mut attempts = 0u32;
         let n = loop {
-            if attempts > self.config.max_retries {
-                return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC retry budget exhausted")));
-            }
-            attempts += 1;
             let now = std::time::Instant::now();
             if now >= total_deadline { return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC deadline elapsed"))); }
-            let wait = self.config.retry_interval.min(total_deadline.saturating_duration_since(now));
+            let send_attempt = attempts <= self.config.max_retries;
+            attempts = attempts.saturating_add(1);
+            let remaining = total_deadline.saturating_duration_since(now);
+            let wait = if send_attempt { self.config.retry_interval.min(remaining) } else { remaining };
             socket.set_read_timeout(Some(wait))?;
-            socket.send(&packet)?;
+            if send_attempt { socket.send(&packet)?; }
             match socket.recv(&mut response) {
                 Ok(n) => break n,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
                     if std::time::Instant::now() >= total_deadline { return Err(RpcError::Io(e)); }
-                    // The same request ID/session/sequence is retransmitted.
-                    // CALLGRAPH deduplicates it and replays a cached response.
+                    // After the configured retransmissions, wait for the
+                    // original response until the overall deadline.
                 }
                 Err(e) => return Err(RpcError::Io(e)),
             }
