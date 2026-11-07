@@ -43,17 +43,16 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
     .expect("valid RPC config");
 
     let started = Instant::now();
-    let mut last_error = None;
     loop {
         match client.call(OPERATION_ID, 1, 0, b"cross-language") {
             Ok(response) => {
                 assert_eq!(response, b"go:cross-language");
                 return;
             }
-            Err(error) => last_error = Some(error.to_string()),
-        }
-        if started.elapsed() > Duration::from_secs(8) {
-            panic!("Go CALLGRAPH server did not interoperate: {:?}", last_error);
+            Err(error) if started.elapsed() > Duration::from_secs(8) => {
+                panic!("Go CALLGRAPH server did not interoperate: {error}");
+            }
+            Err(_) => {}
         }
         if let Ok(status) = _server.0.try_wait() {
             panic!("Go CALLGRAPH server exited early: {status:?}");
