@@ -1,4 +1,4 @@
-name: Rust CI
+name: Rust and cross-language CI
 on:
   push:
   pull_request:
@@ -8,9 +8,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jadhavdurvesh/callgraph
+          path: callgraph
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build Go CALLGRAPH interoperability server
+        working-directory: callgraph
+        run: go build -o "$RUNNER_TEMP/callgraph-interop-server" ./cmd/interop-server
+      - name: Export interoperability server path
+        run: echo "CALLGRAPH_INTEROP_SERVER=$RUNNER_TEMP/callgraph-interop-server" >> "$GITHUB_ENV"
+      - run: cargo fmt --all -- --check
       - run: cargo test --all-targets
       - run: cargo clippy --all-targets -- -D warnings
