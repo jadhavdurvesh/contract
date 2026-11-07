@@ -15,11 +15,17 @@ impl Pipeline {
 
     pub fn execute<F>(&self, request: &Request, handler: F) -> Response
     where F: FnOnce(&Request) -> Response {
+        let mut entered = 0usize;
+        let mut short_circuit = None;
         for layer in &self.layers {
-            if let Some(response) = layer.before(request) { return response; }
+            entered += 1;
+            if let Some(response) = layer.before(request) {
+                short_circuit = Some(response);
+                break;
+            }
         }
-        let mut response = handler(request);
-        for layer in self.layers.iter().rev() {
+        let mut response = short_circuit.unwrap_or_else(|| handler(request));
+        for layer in self.layers[..entered].iter().rev() {
             response = layer.after(request, response);
         }
         response
