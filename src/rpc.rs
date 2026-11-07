@@ -1,14 +1,33 @@
 //! CONTRACT-to-CALLGRAPH synchronous UDP bridge.
 //! Wire stack: CALLGRAPH frame inside OCTET frame inside DATAGRAM envelope.
 //! Correlation identifiers are unique within this process; they are not credentials.
-use std::{
-    io,
-    net::{SocketAddr, UdpSocket},
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
+use std::{io, net::{SocketAddr, UdpSocket}, time::Duration};
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+fn secure_nonce(session: u64, sequence: u32, response: bool) -> [u8; 12] {
+    let mut nonce = [0u8; 12];
+    nonce[..8].copy_from_slice(&session.to_be_bytes());
+    let seq = if response { sequence | 0x8000_0000 } else { sequence };
+    nonce[8..].copy_from_slice(&seq.to_be_bytes());
+    nonce
+}
+fn seal_secure(key: &[u8; 32], session: u64, sequence: u32, response: bool, plaintext: &[u8]) -> Result<Vec<u8>, RpcError> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| RpcError::InvalidConfig)?;
+    let nonce_bytes = secure_nonce(session, sequence, response);
+    let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: plaintext, aad: &nonce_bytes })
+        .map_err(|_| RpcError::Authentication)?;
+    let mut wire = Vec::with_capacity(4 + ciphertext.len());
+    wire.extend_from_slice(b"SEC1"); wire.extend_from_slice(&ciphertext);
+    Ok(wire)
+}
+fn open_secure(key: &[u8; 32], session: u64, sequence: u32, response: bool, wire: &[u8]) -> Result<Vec<u8>, RpcError> {
+    if wire.len() < 20 || &wire[..4] != b"SEC1" { return Err(RpcError::Authentication); }
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| RpcError::InvalidConfig)?;
+    let nonce_bytes = secure_nonce(session, sequence, response);
+    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: &wire[4..], aad: &nonce_bytes })
+        .map_err(|_| RpcError::Authentication)
+}
+
 const DGM_HEADER: usize = 24;
 const OCT_HEADER: usize = 10;
 const RPC_HEADER: usize = 38;
@@ -23,10 +42,11 @@ pub struct RpcConfig {
     pub timeout: Duration,
     pub max_retries: u32,
     pub retry_interval: Duration,
+    pub pre_shared_key: Option<[u8; 32]>,
 }
 impl Default for RpcConfig {
     fn default() -> Self {
-        Self { max_payload_bytes: 60 * 1024, max_datagram_bytes: 65_507, timeout: Duration::from_secs(5), max_retries: 2, retry_interval: Duration::from_millis(250) }
+        Self { max_payload_bytes: 60 * 1024, max_datagram_bytes: 65_507, timeout: Duration::from_secs(5), max_retries: 2, retry_interval: Duration::from_millis(250), pre_shared_key: None }
     }
 }
 #[derive(Debug)]
@@ -40,6 +60,7 @@ pub enum RpcError {
     RequestMismatch,
     UnexpectedMessage,
     Remote(String),
+    Authentication,
 }
 impl From<io::Error> for RpcError { fn from(value: io::Error) -> Self { Self::Io(value) } }
 impl std::fmt::Display for RpcError {
@@ -54,6 +75,7 @@ impl std::fmt::Display for RpcError {
             Self::RequestMismatch => write!(f, "RPC response request ID mismatch"),
             Self::UnexpectedMessage => write!(f, "unexpected RPC message kind"),
             Self::Remote(message) => write!(f, "remote operation failed: {message}"),
+            Self::Authentication => write!(f, "RPC authentication failed"),
         }
     }
 }
@@ -69,7 +91,7 @@ impl RpcClient {
         if config.max_payload_bytes == 0 || config.timeout.is_zero() || config.retry_interval.is_zero()
             || config.max_datagram_bytes > 65_507
             || config.max_datagram_bytes < DGM_HEADER + OCT_HEADER + RPC_HEADER
-            || config.max_payload_bytes > config.max_datagram_bytes - DGM_HEADER - OCT_HEADER - RPC_HEADER {
+            || config.max_payload_bytes > config.max_datagram_bytes - DGM_HEADER - OCT_HEADER - RPC_HEADER - if config.pre_shared_key.is_some() { 20 } else { 0 } {
             return Err(RpcError::InvalidConfig);
         }
         Ok(Self { remote, config })
@@ -81,12 +103,11 @@ impl RpcClient {
         socket.connect(self.remote)?;
         socket.set_write_timeout(Some(self.config.timeout))?;
 
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
         let mut request_id = [0u8; 16];
-        request_id[..8].copy_from_slice(&now.to_be_bytes());
-        request_id[8..].copy_from_slice(&id.to_be_bytes());
-        let session = now ^ id.rotate_left(17);
+        let mut session_bytes = [0u8; 8];
+        getrandom::getrandom(&mut request_id).map_err(|e| RpcError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+        getrandom::getrandom(&mut session_bytes).map_err(|e| RpcError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+        let session = u64::from_be_bytes(session_bytes);
 
         let mut rpc = vec![0u8; RPC_HEADER + payload.len()];
         rpc[..4].copy_from_slice(b"CGR1");
@@ -105,12 +126,15 @@ impl RpcClient {
         octet[6..10].copy_from_slice(&(rpc.len() as u32).to_be_bytes());
         octet[10..].copy_from_slice(&rpc);
 
-        let mut packet = vec![0u8; DGM_HEADER + octet.len()];
+        let wire_payload = if let Some(key) = &self.config.pre_shared_key {
+            seal_secure(key, session, 1, false, &octet)?
+        } else { octet };
+        let mut packet = vec![0u8; DGM_HEADER + wire_payload.len()];
         packet[..4].copy_from_slice(b"DGM1"); packet[4] = 1;
         packet[6..14].copy_from_slice(&session.to_be_bytes());
         packet[14..22].copy_from_slice(&1u64.to_be_bytes());
-        packet[22..24].copy_from_slice(&(octet.len() as u16).to_be_bytes());
-        packet[24..].copy_from_slice(&octet);
+        packet[22..24].copy_from_slice(&(wire_payload.len() as u16).to_be_bytes());
+        packet[24..].copy_from_slice(&wire_payload);
         if packet.len() > self.config.max_datagram_bytes { return Err(RpcError::PayloadTooLarge); }
         let total_deadline = std::time::Instant::now() + self.config.timeout;
         let mut response = vec![0u8; self.config.max_datagram_bytes + 1];
@@ -143,7 +167,12 @@ impl RpcClient {
             || response.len() != DGM_HEADER + u16::from_be_bytes(response[22..24].try_into().unwrap()) as usize {
             return Err(RpcError::MalformedDatagram);
         }
-        let octet = &response[DGM_HEADER..];
+        let wire_payload = &response[DGM_HEADER..];
+        let decrypted;
+        let octet: &[u8] = if let Some(key) = &self.config.pre_shared_key {
+            decrypted = open_secure(key, session, 1, true, wire_payload)?;
+            &decrypted
+        } else { wire_payload };
         if octet.len() < OCT_HEADER || &octet[..4] != b"OCT1" || octet[4] != 1
             || octet.len() != OCT_HEADER + u32::from_be_bytes(octet[6..10].try_into().unwrap()) as usize {
             return Err(RpcError::MalformedOctet);
