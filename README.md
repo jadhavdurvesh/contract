@@ -8,6 +8,8 @@ CONTRACT is a transport-independent API application core with a bounded HTTP/1.1
 
 The first listener deliberately rejects transfer-encoding and does not support chunked bodies, keep-alive, upgrades, or pipelining. Place TLS termination at a trusted reverse proxy until a native TLS listener is implemented.
 
+See [examples/http_server.rs](examples/http_server.rs) for a runnable listener example.
+
 ## CALLGRAPH RPC
 
 The RPC client uses:
