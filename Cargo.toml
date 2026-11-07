@@ -9,5 +9,5 @@ license = "MIT"
 path = "src/lib.rs"
 
 [dependencies]
-aes-gcm = "0.10.3"
+datagram = { git = "https://github.com/jadhavdurvesh/datagram", rev = "44d7addd974203f6337b5dc4057c6a7c870bfc3e" }
 getrandom = "0.2.15"
