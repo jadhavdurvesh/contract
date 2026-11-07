@@ -1,5 +1,17 @@
 use crate::{Method,Request,Response};use std::collections::{BTreeMap,BTreeSet};
 #[derive(Debug,PartialEq,Eq)]pub enum RouteError{EmptyPattern,EmptyParameter,DuplicateParameter,DuplicateRoute}
+impl std::fmt::Display for RouteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::EmptyPattern => "route pattern cannot be empty",
+            Self::EmptyParameter => "route parameter name cannot be empty",
+            Self::DuplicateParameter => "route parameter names must be unique",
+            Self::DuplicateRoute => "route method and pattern are already registered",
+        };
+        f.write_str(message)
+    }
+}
+impl std::error::Error for RouteError {}
 type Handler=Box<dyn Fn(&Request)->Response+Send+Sync+'static>;struct Route{method:Method,pattern:String,segments:Vec<String>,handler:Handler}
 #[derive(Default)]pub struct Router{routes:Vec<Route>}
 impl Router{pub fn new()->Self{Self::default()}pub fn add<F>(&mut self,m:Method,p:impl Into<String>,h:F)->Result<(),RouteError>where F:Fn(&Request)->Response+Send+Sync+'static{let p=p.into();if p.is_empty(){return Err(RouteError::EmptyPattern)}if self.routes.iter().any(|r|r.method==m&&r.pattern==p){return Err(RouteError::DuplicateRoute)}let seg:Vec<String>=p.trim_matches('/').split('/').map(str::to_owned).collect();let mut names=BTreeSet::new();for s in &seg{if let Some(n)=s.strip_prefix(':'){if n.is_empty(){return Err(RouteError::EmptyParameter)}if !names.insert(n.to_owned()){return Err(RouteError::DuplicateParameter)}}}self.routes.push(Route{method:m,pattern:p,segments:seg,handler:Box::new(h)});Ok(())}
