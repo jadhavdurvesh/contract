@@ -9,7 +9,7 @@
 - [x] Bounded HTTP/1.1 listener: one request per connection, Content-Length only.
 - [x] CALLGRAPH UDP client using OCTET and DATAGRAM wire profiles.
 - [x] Bounded retransmission and optional AES-256-GCM PSK interoperability with Go CALLGRAPH.
-- [ ] Integrate Router and Middleware pipeline into the main Application dispatch path.
+- [x] Integrate Router and Middleware pipeline into the main Application dispatch path, including after-hooks for short-circuit responses.
 - [ ] Query/header abstractions and richer response/header types.
 - [ ] HTTP parser conformance suite, fuzzing and malformed-request response mapping.
 - [ ] Native TLS listener or documented TLS proxy integration.
