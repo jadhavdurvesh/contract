@@ -1,6 +1,7 @@
 //! CONTRACT: transport-independent API application core.
 pub mod middleware;
 pub mod router;
+pub mod rpc;
 use std::collections::BTreeMap;
 #[derive(Clone,Debug,PartialEq,Eq)]pub enum Method{Get,Post,Put,Patch,Delete}
 #[derive(Clone,Debug,PartialEq,Eq)]pub struct Request{pub method:Method,pub path:String,pub body:Vec<u8>,pub path_params:BTreeMap<String,String>}
