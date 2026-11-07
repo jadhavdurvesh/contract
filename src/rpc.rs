@@ -84,6 +84,12 @@ impl RpcClient {
     }
 
     pub fn call(&self, operation_id: u32, major: u16, minor: u16, payload: &[u8]) -> Result<Vec<u8>, RpcError> {
+        self.call_with_retry(operation_id, major, minor, payload, false)
+    }
+
+    /// Retransmission is opt-in and must only be enabled for operations that
+    /// are safe to repeat under the operation's idempotency contract.
+    pub fn call_with_retry(&self, operation_id: u32, major: u16, minor: u16, payload: &[u8], retry_safe: bool) -> Result<Vec<u8>, RpcError> {
         if payload.len() > self.config.max_payload_bytes { return Err(RpcError::PayloadTooLarge); }
         let socket = UdpSocket::bind(if self.remote.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })?;
         socket.connect(self.remote)?;
@@ -128,7 +134,7 @@ impl RpcClient {
         let n = loop {
             let now = std::time::Instant::now();
             if now >= total_deadline { return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC deadline elapsed"))); }
-            let send_attempt = attempts <= self.config.max_retries;
+            let send_attempt = attempts == 0 || (retry_safe && attempts <= self.config.max_retries);
             attempts = attempts.saturating_add(1);
             let remaining = total_deadline.saturating_duration_since(now);
             let wait = if send_attempt { self.config.retry_interval.min(remaining) } else { remaining };
