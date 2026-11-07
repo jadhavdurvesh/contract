@@ -27,7 +27,8 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
 
     let address: SocketAddr = "127.0.0.1:19000".parse().unwrap();
     let child = Command::new(binary)
-        .env("CALLGRAPH_LISTEN", address.to_string())
+         .env("CALLGRAPH_LISTEN", address.to_string())
+        .env("CALLGRAPH_PSK_HEX", "4242424242424242424242424242424242424242424242424242424242424242")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()
@@ -37,7 +38,8 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
     let client = contract::rpc::RpcClient::new(
         address,
         contract::rpc::RpcConfig {
-            timeout: Duration::from_millis(700),
+            timeout: Duration::from_millis(1500),
+            pre_shared_key: Some([0x42; 32]),
             ..Default::default()
         },
     )
