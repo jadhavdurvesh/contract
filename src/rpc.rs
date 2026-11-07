@@ -107,7 +107,7 @@ impl RpcClient {
 
         let mut request_id = [0u8; 16];
         let mut session_bytes = [0u8; 8];
-        getrandom::getrandom(&mut request_id).map_err(|e| RpcError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+        getrandom::getrandom(&mut request_id).map_err(|e| RpcError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
         getrandom::getrandom(&mut session_bytes).map_err(|e| RpcError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
         let session = u64::from_be_bytes(session_bytes);
 
