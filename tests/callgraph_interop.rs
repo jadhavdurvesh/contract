@@ -74,4 +74,6 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
         }));
     }
     for worker in workers { worker.join().expect("concurrent RPC worker"); }
+    let missing = client.call(0x7fff_ffff, 1, 0, b"missing");
+    assert!(matches!(missing, Err(contract::rpc::RpcError::Remote { code: 1001, .. })));
 }
