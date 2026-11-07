@@ -229,6 +229,54 @@ mod tests {
     }
 
     #[test]
+    fn retries_only_when_explicitly_marked_safe() {
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let worker = thread::spawn(move || {
+            let mut buf = [0u8; 2048];
+            let (first_n, peer) = server.recv_from(&mut buf).unwrap();
+            let first = buf[..first_n].to_vec();
+            // Simulate a lost first response. The client must resend the same
+            // session/sequence/request tuple, not construct a new operation.
+            let (second_n, peer2) = server.recv_from(&mut buf).unwrap();
+            assert_eq!(peer, peer2);
+            assert_eq!(&buf[..second_n], first.as_slice());
+            let request = &first;
+            let octet = &request[DGM_HEADER..];
+            let frame = &octet[OCT_HEADER..];
+            let payload = &frame[RPC_HEADER..];
+            let mut response_frame = vec![0u8; RPC_HEADER + payload.len()];
+            response_frame[..4].copy_from_slice(b"CGR1");
+            response_frame[4] = 1; response_frame[5] = KIND_RESPONSE;
+            response_frame[6..22].copy_from_slice(&frame[6..22]);
+            response_frame[22..26].copy_from_slice(&frame[22..26]);
+            response_frame[26..28].copy_from_slice(&frame[26..28]);
+            response_frame[28..30].copy_from_slice(&frame[28..30]);
+            response_frame[34..38].copy_from_slice(&(payload.len() as u32).to_be_bytes());
+            response_frame[38..].copy_from_slice(payload);
+            let mut response_octet = vec![0u8; OCT_HEADER + response_frame.len()];
+            response_octet[..4].copy_from_slice(b"OCT1"); response_octet[4] = 1;
+            response_octet[6..10].copy_from_slice(&(response_frame.len() as u32).to_be_bytes());
+            response_octet[10..].copy_from_slice(&response_frame);
+            let mut response = vec![0u8; DGM_HEADER + response_octet.len()];
+            response[..4].copy_from_slice(b"DGM1"); response[4] = 1;
+            response[6..14].copy_from_slice(&request[6..14]);
+            response[14..22].copy_from_slice(&request[14..22]);
+            response[22..24].copy_from_slice(&(response_octet.len() as u16).to_be_bytes());
+            response[24..].copy_from_slice(&response_octet);
+            server.send_to(&response, peer).unwrap();
+        });
+        let client = RpcClient::new(addr, RpcConfig {
+            timeout: Duration::from_millis(500),
+            retry_interval: Duration::from_millis(30),
+            max_retries: 1,
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(client.call_with_retry(42, 1, 0, b"retry", true).unwrap(), b"retry");
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn rejects_inconsistent_wire_limits() {
         let config = RpcConfig { max_payload_bytes: 100_000, ..RpcConfig::default() };
         assert!(matches!(RpcClient::new("127.0.0.1:9".parse().unwrap(), config), Err(RpcError::InvalidConfig)));
