@@ -16,11 +16,15 @@ The RPC client uses:
 
 `CALLGRAPH frame → OCTET frame → DATAGRAM envelope → UDP/IP`
 
-It supports bounded retransmission and optional AES-256-GCM protection. README.md README.md Supply a 32-byte `pre_shared_key` in `RpcConfig` and configure the Go CALLGRAPH server with the same key. Keep keys in a secret manager; never commit them.
+It supports bounded retransmission and optional AES-256-GCM protection. The Rust client does not retransmit by default; use `call_with_retry(..., true)` only for operations whose idempotency contract makes replay safe. Remote errors are decoded into `RpcError::Remote { code, message }`, preserving stable error codes.
 
-## Example
+Supply a 32-byte `pre_shared_key` in `RpcConfig` and configure the Go CALLGRAPH server with the same key. Keep keys in a secret manager; never commit them.
 
-See [examples/rpc_gateway.rs](examples/rpc_gateway.rs) and the real Rust-to-Go encrypted interoperability test in [tests/callgraph_interop.rs](tests/callgraph_interop.rs).
+## Examples and verification
+
+- [HTTP server](examples/http_server.rs)
+- [RPC gateway](examples/rpc_gateway.rs)
+- [Encrypted Rust-to-Go interoperability test](tests/callgraph_interop.rs)
 
 ## Safety and limitations
 
