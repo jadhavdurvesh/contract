@@ -1,30 +1,14 @@
 //! CONTRACT-to-CALLGRAPH synchronous UDP bridge.
 //! Wire stack: CALLGRAPH frame inside OCTET frame inside DATAGRAM envelope.
 //! Correlation identifiers are unique within this process; they are not credentials.
-use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
 use std::{io, net::{SocketAddr, UdpSocket}, time::Duration};
 
-fn secure_nonce(session: u64, sequence: u32, response: bool) -> [u8; 12] {
-    let mut nonce = [0u8; 12];
-    nonce[..8].copy_from_slice(&session.to_be_bytes());
-    let seq = if response { sequence | 0x8000_0000 } else { sequence };
-    nonce[8..].copy_from_slice(&seq.to_be_bytes());
-    nonce
-}
 fn seal_secure(key: &[u8; 32], session: u64, sequence: u32, response: bool, plaintext: &[u8]) -> Result<Vec<u8>, RpcError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| RpcError::InvalidConfig)?;
-    let nonce_bytes = secure_nonce(session, sequence, response);
-    let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: plaintext, aad: &nonce_bytes })
-        .map_err(|_| RpcError::Authentication)?;
-    let mut wire = Vec::with_capacity(4 + ciphertext.len());
-    wire.extend_from_slice(b"SEC1"); wire.extend_from_slice(&ciphertext);
-    Ok(wire)
+    datagram::security::seal_payload(key, session, sequence as u64, response, plaintext)
+        .map_err(|_| RpcError::Authentication)
 }
 fn open_secure(key: &[u8; 32], session: u64, sequence: u32, response: bool, wire: &[u8]) -> Result<Vec<u8>, RpcError> {
-    if wire.len() < 20 || &wire[..4] != b"SEC1" { return Err(RpcError::Authentication); }
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| RpcError::InvalidConfig)?;
-    let nonce_bytes = secure_nonce(session, sequence, response);
-    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: &wire[4..], aad: &nonce_bytes })
+    datagram::security::open_payload(key, session, sequence as u64, response, wire)
         .map_err(|_| RpcError::Authentication)
 }
 
