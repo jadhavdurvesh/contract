@@ -122,6 +122,7 @@ fn handle_connection(mut stream:TcpStream, app:&Application, cfg:HttpConfig)->Re
         bytes.extend_from_slice(&chunk[..n]);
         if bytes.len()-body_start>body_len { return Err(HttpError::MalformedRequest); }
     }
+    if bytes.len()-body_start != body_len { return Err(HttpError::MalformedRequest); }
     let body=bytes[body_start..body_start+body_len].to_vec();
     let request=Request::new(method,path,body);
     if validate_request(&request,count,Limits{max_path_bytes:cfg.max_request_line_bytes,max_body_bytes:cfg.max_body_bytes,max_headers:cfg.max_headers}).is_err(){
@@ -154,6 +155,7 @@ mod tests {
   app.route(Method::Get,"/health",|_|Response::text(200,"ok"));
   let app=Arc::new(app);let server=HttpServer::bind("127.0.0.1:0",app,HttpConfig::default()).unwrap();
   let addr=server.local_addr().unwrap();
+  server.listener.set_nonblocking(false).unwrap();
   let worker=thread::spawn(move||{let mut stream=TcpStream::connect(addr).unwrap();stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();let mut out=String::new();stream.read_to_string(&mut out).unwrap();out});
   let (stream,_)=server.listener.accept().unwrap();handle_connection(stream,&server.app,server.config).unwrap();
   assert!(worker.join().unwrap().contains("200 OK"));
