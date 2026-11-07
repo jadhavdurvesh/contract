@@ -114,7 +114,12 @@ impl RpcClient {
         if packet.len() > self.config.max_datagram_bytes { return Err(RpcError::PayloadTooLarge); }
         let total_deadline = std::time::Instant::now() + self.config.timeout;
         let mut response = vec![0u8; self.config.max_datagram_bytes + 1];
+        let mut attempts = 0u32;
         let n = loop {
+            if attempts > self.config.max_retries {
+                return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC retry budget exhausted")));
+            }
+            attempts += 1;
             let now = std::time::Instant::now();
             if now >= total_deadline { return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC deadline elapsed"))); }
             let wait = self.config.retry_interval.min(total_deadline.saturating_duration_since(now));
