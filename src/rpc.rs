@@ -88,10 +88,12 @@ impl std::error::Error for RpcError {
 pub struct RpcClient { remote: SocketAddr, config: RpcConfig }
 impl RpcClient {
     pub fn new(remote: SocketAddr, config: RpcConfig) -> Result<Self, RpcError> {
+        let crypto_overhead = if config.pre_shared_key.is_some() { 20 } else { 0 };
+        let fixed_overhead = DGM_HEADER + OCT_HEADER + RPC_HEADER + crypto_overhead;
         if config.max_payload_bytes == 0 || config.timeout.is_zero() || config.retry_interval.is_zero()
             || config.max_datagram_bytes > 65_507
-            || config.max_datagram_bytes < DGM_HEADER + OCT_HEADER + RPC_HEADER
-            || config.max_payload_bytes > config.max_datagram_bytes - DGM_HEADER - OCT_HEADER - RPC_HEADER - if config.pre_shared_key.is_some() { 20 } else { 0 } {
+            || config.max_datagram_bytes < fixed_overhead
+            || config.max_payload_bytes > config.max_datagram_bytes - fixed_overhead {
             return Err(RpcError::InvalidConfig);
         }
         Ok(Self { remote, config })
