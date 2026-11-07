@@ -1,40 +1,25 @@
 # CONTRACT
 
-A transport-independent API application framework and request-dispatch core.
+CONTRACT is a transport-independent API application core with a bounded HTTP/1.1 listener and a CALLGRAPH RPC client.
 
-## CALLGRAPH integration
+## HTTP server
 
-CONTRACT includes a synchronous UDP RPC client in `contract::rpc`. It sends the shared wire stack:
+`HttpServer` supports one request per TCP connection, HTTP/1.0 and HTTP/1.1, the common API methods, bounded request/header/body sizes, read/write timeouts, and a bounded active-connection count.
+
+The first listener deliberately rejects transfer-encoding and does not support chunked bodies, keep-alive, upgrades, or pipelining. Place TLS termination at a trusted reverse proxy until a native TLS listener is implemented.
+
+## CALLGRAPH RPC
+
+The RPC client uses:
 
 `CALLGRAPH frame → OCTET frame → DATAGRAM envelope → UDP/IP`
 
-A CONTRACT route can capture an `RpcClient` and forward an API request body to a registered CALLGRAPH operation. See [examples/rpc_gateway.rs](examples/rpc_gateway.rs).
+It supports bounded retransmission and optional AES-256-GCM protection. Supply a 32-byte `pre_shared_key` in `RpcConfig` and configure the Go CALLGRAPH server with the same key. Keep keys in a secret manager; never commit them.
 
-```rust
-let rpc = RpcClient::new("127.0.0.1:9000".parse()?, RpcConfig::default())?;
-app.route(Method::Post, "/v1/robots/:id/command", move |request| {
-    match rpc.call(OPERATION_ID, 1, 0, &request.body) {
-        Ok(body) => Response::new(200, body),
-        Err(_) => Response::text(502, "upstream RPC failure"),
-    }
-});
-```
+## Example
 
-The example demonstrates application dispatch, not a complete HTTP listener. A dedicated HTTP adapter remains a separate component and must enforce request-line, header, body, connection, and timeout limits before constructing a CONTRACT request.
-
-## Scope
-
-- Method and path dispatch with named path parameters.
-- Middleware pipeline and request validation.
-- Bounded synchronous CALLGRAPH RPC client.
-- No dependency on a third-party web framework.
+See [examples/rpc_gateway.rs](examples/rpc_gateway.rs) and the real Rust-to-Go encrypted interoperability test in [tests/callgraph_interop.rs](tests/callgraph_interop.rs).
 
 ## Safety and limitations
 
-The UDP RPC client is a prototype transport adapter. Correlation/session values are not authentication credentials. The current wire stack does not provide authenticated encryption, reliable delivery, congestion control, or production-grade peer identity. Do not use it for emergency-stop or hard real-time actuator paths.
-
-## Related repositories
-
-- [OCTET](https://github.com/jadhavdurvesh/octet) — binary serialization profile.
-- [DATAGRAM](https://github.com/jadhavdurvesh/datagram) — UDP transport primitives.
-- [CALLGRAPH](https://github.com/jadhavdurvesh/callgraph) — remote operation runtime.
+The HTTP listener is an initial bounded implementation, not a complete hardened internet-facing server. Use a reverse proxy for TLS, request filtering and rate limits. The UDP PSK mode has no key exchange or forward secrecy. The transport is unsuitable for hard real-time actuator control.
