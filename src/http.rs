@@ -30,6 +30,22 @@ impl Default for HttpConfig {
 #[derive(Debug)]
 pub enum HttpError { Io(io::Error), InvalidConfig, MalformedRequest, RequestTooLarge, UnsupportedTransferEncoding }
 impl From<io::Error> for HttpError { fn from(e: io::Error) -> Self { Self::Io(e) } }
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "HTTP I/O error: {e}"),
+            Self::InvalidConfig => f.write_str("invalid HTTP server configuration"),
+            Self::MalformedRequest => f.write_str("malformed HTTP request"),
+            Self::RequestTooLarge => f.write_str("HTTP request exceeds configured limits"),
+            Self::UnsupportedTransferEncoding => f.write_str("unsupported HTTP transfer encoding"),
+        }
+    }
+}
+impl std::error::Error for HttpError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self { Self::Io(e) => Some(e), _ => None }
+    }
+}
 
 pub struct HttpServer { listener: TcpListener, app: Arc<Application>, config: HttpConfig, active: Arc<AtomicUsize> }
 impl HttpServer {
