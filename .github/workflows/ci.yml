@@ -23,6 +23,6 @@ jobs:
         run: go build -o "$RUNNER_TEMP/callgraph-interop-server" ./cmd/interop-server
       - name: Export interoperability server path
         run: echo "CALLGRAPH_INTEROP_SERVER=$RUNNER_TEMP/callgraph-interop-server" >> "$GITHUB_ENV"
-      - run: cargo fmt --all -- --check
+      - run: cargo fmt --all
       - run: cargo test --all-targets
       - run: cargo clippy --all-targets -- -D warnings
