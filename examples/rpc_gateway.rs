@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(body) => Response::new(200, body),
             Err(_) => Response::text(502, "upstream RPC failure"),
         }
-    });
+    })?;
 
     // This demonstrates CONTRACT dispatch. Attach an HTTP listener adapter to
     // translate real HTTP requests into Request and serialize Response.
