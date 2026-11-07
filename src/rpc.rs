@@ -40,6 +40,26 @@ pub enum RpcError {
     Remote(String),
 }
 impl From<io::Error> for RpcError { fn from(value: io::Error) -> Self { Self::Io(value) } }
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "RPC I/O error: {e}"),
+            Self::InvalidConfig => write!(f, "invalid RPC client configuration"),
+            Self::PayloadTooLarge => write!(f, "RPC payload exceeds configured limit"),
+            Self::MalformedDatagram => write!(f, "malformed DATAGRAM envelope"),
+            Self::MalformedOctet => write!(f, "malformed OCTET frame"),
+            Self::MalformedRpcFrame => write!(f, "malformed CALLGRAPH frame"),
+            Self::RequestMismatch => write!(f, "RPC response request ID mismatch"),
+            Self::UnexpectedMessage => write!(f, "unexpected RPC message kind"),
+            Self::Remote(message) => write!(f, "remote operation failed: {message}"),
+        }
+    }
+}
+impl std::error::Error for RpcError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self { Self::Io(e) => Some(e), _ => None }
+    }
+}
 
 pub struct RpcClient { remote: SocketAddr, config: RpcConfig }
 impl RpcClient {
@@ -47,7 +67,7 @@ impl RpcClient {
         if config.max_payload_bytes == 0 || config.timeout.is_zero()
             || config.max_datagram_bytes > 65_507
             || config.max_datagram_bytes < DGM_HEADER + OCT_HEADER + RPC_HEADER
-            || config.max_payload_bytes + DGM_HEADER + OCT_HEADER + RPC_HEADER > config.max_datagram_bytes {
+            || config.max_payload_bytes > config.max_datagram_bytes - DGM_HEADER - OCT_HEADER - RPC_HEADER {
             return Err(RpcError::InvalidConfig);
         }
         Ok(Self { remote, config })
