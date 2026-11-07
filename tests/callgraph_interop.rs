@@ -31,7 +31,7 @@ fn rust_contract_client_interoperates_with_go_callgraph_server() {
         .stderr(Stdio::inherit())
         .spawn()
         .expect("start Go CALLGRAPH interoperability server");
-    let _server = Server(child);
+    let mut _server = Server(child);
 
     let client = contract::rpc::RpcClient::new(
         address,
