@@ -1,0 +1,9 @@
+[package]
+name = "contract"
+version = "0.1.0"
+edition = "2021"
+description = "Research-oriented API application framework"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
