@@ -16,7 +16,7 @@ The RPC client uses:
 
 `CALLGRAPH frame → OCTET frame → DATAGRAM envelope → UDP/IP`
 
-It supports bounded retransmission and optional AES-256-GCM protection. Supply a 32-byte `pre_shared_key` in `RpcConfig` and configure the Go CALLGRAPH server with the same key. Keep keys in a secret manager; never commit them.
+It supports bounded retransmission and optional AES-256-GCM protection. README.md Supply a 32-byte `pre_shared_key` in `RpcConfig` and configure the Go CALLGRAPH server with the same key. Keep keys in a secret manager; never commit them.
 
 ## Example
 
