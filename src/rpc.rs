@@ -43,7 +43,7 @@ pub enum RpcError {
     MalformedRpcFrame,
     RequestMismatch,
     UnexpectedMessage,
-    Remote(String),
+    Remote { code: u16, message: String },
     Authentication,
 }
 impl From<io::Error> for RpcError { fn from(value: io::Error) -> Self { Self::Io(value) } }
@@ -58,7 +58,7 @@ impl std::fmt::Display for RpcError {
             Self::MalformedRpcFrame => write!(f, "malformed CALLGRAPH frame"),
             Self::RequestMismatch => write!(f, "RPC response request ID mismatch"),
             Self::UnexpectedMessage => write!(f, "unexpected RPC message kind"),
-            Self::Remote(message) => write!(f, "remote operation failed: {message}"),
+            Self::Remote { code, message } => write!(f, "remote operation failed ({code}): {message}"),
             Self::Authentication => write!(f, "RPC authentication failed"),
         }
     }
@@ -177,7 +177,15 @@ impl RpcClient {
         let body = frame[RPC_HEADER..].to_vec();
         match frame[5] {
             KIND_RESPONSE => Ok(body),
-            KIND_ERROR => Err(RpcError::Remote(String::from_utf8_lossy(&body).into_owned())),
+            KIND_ERROR => {
+                if body.len() < 8 || &body[..4] != b"ERR1" {
+                    return Err(RpcError::MalformedRpcFrame);
+                }
+                let code = u16::from_be_bytes(body[4..6].try_into().unwrap());
+                let message_len = u16::from_be_bytes(body[6..8].try_into().unwrap()) as usize;
+                if message_len != body.len() - 8 { return Err(RpcError::MalformedRpcFrame); }
+                Err(RpcError::Remote { code, message: String::from_utf8_lossy(&body[8..]).into_owned() })
+            },
             _ => Err(RpcError::UnexpectedMessage),
         }
     }
