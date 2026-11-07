@@ -13,6 +13,7 @@
 - [ ] Query/header abstractions and richer response/header types.
 - [ ] HTTP parser conformance suite, fuzzing and malformed-request response mapping.
 - [ ] Native TLS listener or documented TLS proxy integration.
-- [ ] Structured errors, tracing, metrics and load benchmarks.
+- [x] Decode stable CALLGRAPH remote error codes into typed Rust errors.
+- [ ] HTTP error response mapping, tracing, metrics and load benchmarks.
 
 The HTTP listener is intentionally limited and should sit behind a hardened TLS reverse proxy for network-facing deployments.
