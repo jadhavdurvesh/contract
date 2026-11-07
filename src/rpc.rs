@@ -21,10 +21,12 @@ pub struct RpcConfig {
     pub max_payload_bytes: usize,
     pub max_datagram_bytes: usize,
     pub timeout: Duration,
+    pub max_retries: u32,
+    pub retry_interval: Duration,
 }
 impl Default for RpcConfig {
     fn default() -> Self {
-        Self { max_payload_bytes: 60 * 1024, max_datagram_bytes: 65_507, timeout: Duration::from_secs(5) }
+        Self { max_payload_bytes: 60 * 1024, max_datagram_bytes: 65_507, timeout: Duration::from_secs(5), max_retries: 2, retry_interval: Duration::from_millis(250) }
     }
 }
 #[derive(Debug)]
@@ -64,7 +66,7 @@ impl std::error::Error for RpcError {
 pub struct RpcClient { remote: SocketAddr, config: RpcConfig }
 impl RpcClient {
     pub fn new(remote: SocketAddr, config: RpcConfig) -> Result<Self, RpcError> {
-        if config.max_payload_bytes == 0 || config.timeout.is_zero()
+        if config.max_payload_bytes == 0 || config.timeout.is_zero() || config.retry_interval.is_zero()
             || config.max_datagram_bytes > 65_507
             || config.max_datagram_bytes < DGM_HEADER + OCT_HEADER + RPC_HEADER
             || config.max_payload_bytes > config.max_datagram_bytes - DGM_HEADER - OCT_HEADER - RPC_HEADER {
@@ -77,7 +79,6 @@ impl RpcClient {
         if payload.len() > self.config.max_payload_bytes { return Err(RpcError::PayloadTooLarge); }
         let socket = UdpSocket::bind(if self.remote.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })?;
         socket.connect(self.remote)?;
-        socket.set_read_timeout(Some(self.config.timeout))?;
         socket.set_write_timeout(Some(self.config.timeout))?;
 
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -111,10 +112,24 @@ impl RpcClient {
         packet[22..24].copy_from_slice(&(octet.len() as u16).to_be_bytes());
         packet[24..].copy_from_slice(&octet);
         if packet.len() > self.config.max_datagram_bytes { return Err(RpcError::PayloadTooLarge); }
-        socket.send(&packet)?;
-
+        let total_deadline = std::time::Instant::now() + self.config.timeout;
         let mut response = vec![0u8; self.config.max_datagram_bytes + 1];
-        let n = socket.recv(&mut response)?;
+        let n = loop {
+            let now = std::time::Instant::now();
+            if now >= total_deadline { return Err(RpcError::Io(io::Error::new(io::ErrorKind::TimedOut, "RPC deadline elapsed"))); }
+            let wait = self.config.retry_interval.min(total_deadline.saturating_duration_since(now));
+            socket.set_read_timeout(Some(wait))?;
+            socket.send(&packet)?;
+            match socket.recv(&mut response) {
+                Ok(n) => break n,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
+                    if std::time::Instant::now() >= total_deadline { return Err(RpcError::Io(e)); }
+                    // The same request ID/session/sequence is retransmitted.
+                    // CALLGRAPH deduplicates it and replays a cached response.
+                }
+                Err(e) => return Err(RpcError::Io(e)),
+            }
+        };
         if n > self.config.max_datagram_bytes { return Err(RpcError::MalformedDatagram); }
         let response = &response[..n];
         if response.len() < DGM_HEADER || &response[..4] != b"DGM1" || response[4] != 1
